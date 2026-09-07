@@ -6,6 +6,7 @@ import uuid
 import time
 import shutil
 import requests
+from datetime import datetime, timedelta
 from typing import Tuple, Dict, Any, Optional, Callable
 from .packager import build_app_package
 
@@ -113,47 +114,53 @@ class ShadowBotDeployer:
         headers = {
             "Authorization": f"bearer {target_token}",
             "Content-Type": "application/json; charset=utf-8",
-            "Xybot-Client-RequestId": "57214437-d52d-4f1f-a23f-87c3e9b84adb"
+            "Xybot-Client-RequestId": str(uuid.uuid4())
         }
 
         stats = pkg_data.get("statistics") or {}
+        flows = pkg_data.get("flows") or []
+        flow_count = len(flows) if flows else 1
+        block_count = stats.get("blockCount", 1)
+        magic_block_count = stats.get("magicBlockCount", 0)
+        source_line_count = stats.get("sourceLineCount", 0)
+
         app_package = {
             "activities": [],
             "appFlowParamList": [],
-            "appIcon": "",
-            "appType": "app",
-            "blockCount": 1,
-            "customItems": {
+            "appIcon": pkg_data.get("icon") or "",
+            "appType": pkg_data.get("robot_type") or "app",
+            "blockCount": block_count,
+            "customItems": pkg_data.get("customItems") or {
                 "gifUrl": "",
                 "imageName": "",
                 "imageUrl": "",
                 "uiaType": "PC",
                 "videoUrl": ""
             },
-            "description": "",
+            "description": pkg_data.get("description") or "",
             "elementLibraryCodes": [],
             "enableViewSource": "false",
             "externalDependencies": pkg_data.get("external_dependencies", []),
-            "flowCount": 1,
+            "flowCount": flow_count,
             "gifUrl": "",
             "imageName": "",
             "imageUrl": "",
-            "instruction": "",
+            "instruction": pkg_data.get("instruction") or "",
             "internalDependencies": pkg_data.get("internaldependencies", []),
             "internalautodependencies": pkg_data.get("internalautodependencies", []),
-            "ipaasDependencies": [],
-            "magicBlockCount": 0,
+            "ipaasDependencies": pkg_data.get("ipaasDependencies", []),
+            "magicBlockCount": magic_block_count,
             "name": app_name,
-            "packageCode": "",
-            "sourceLineCount": 0,
+            "packageCode": pkg_data.get("package_code") or "",
+            "sourceLineCount": source_line_count,
             "statistics": {
-                "blockCount": 1,
-                "flowCount": 1,
-                "magicBlockCount": 0,
-                "sourceLineCount": 0
+                "blockCount": block_count,
+                "flowCount": flow_count,
+                "magicBlockCount": magic_block_count,
+                "sourceLineCount": source_line_count
             },
-            "uiTags": "",
-            "uiaType": "PC",
+            "uiTags": pkg_data.get("tags") or "",
+            "uiaType": pkg_data.get("uia_type") or "PC",
             "videoUrl": ""
         }
 
@@ -188,10 +195,13 @@ class ShadowBotDeployer:
             "Authorization": f"bearer {target_token}",
             "Content-Type": "application/json; charset=utf-8"
         }
+        now = datetime.now()
+        start_time = (now - timedelta(minutes=2)).strftime("%Y-%m-%d %H:%M:%S")
+        end_time = now.strftime("%Y-%m-%d %H:%M:%S")
         payload = {
             "appId": app_id,
-            "startTime": "2024-12-23 16:45:12",
-            "endTime": "2024-12-23 16:46:46"
+            "startTime": start_time,
+            "endTime": end_time
         }
         try:
             self.session.post(url, headers=headers, json=payload, timeout=10)

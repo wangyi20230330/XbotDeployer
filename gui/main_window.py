@@ -340,7 +340,8 @@ class MainWindow(QMainWindow):
         self.cmb_users.clear()
         selected_idx = 0
         for idx, u in enumerate(users):
-            self.cmb_users.addItem(f"{u['user_id']} ({u['app_count']}个应用)")
+            display_name = u.get("user_name") or u["user_id"]
+            self.cmb_users.addItem(f"{display_name} ({u['app_count']}个应用)")
             if current_uid and u["user_id"] == current_uid:
                 selected_idx = idx
         self.cmb_users.setCurrentIndex(selected_idx)
@@ -358,8 +359,9 @@ class MainWindow(QMainWindow):
             self.all_apps = scan_local_apps(user_path=selected_user["path"])
             # 同步更新当前下拉项的显示数量，确保完全一致
             selected_user["app_count"] = len(self.all_apps)
+            display_name = selected_user.get("user_name") or selected_user["user_id"]
             self.cmb_users.blockSignals(True)
-            self.cmb_users.setItemText(idx, f"{selected_user['user_id']} ({len(self.all_apps)}个应用)")
+            self.cmb_users.setItemText(idx, f"{display_name} ({len(self.all_apps)}个应用)")
             self.cmb_users.blockSignals(False)
         else:
             self.all_apps = scan_local_apps()

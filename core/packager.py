@@ -8,7 +8,105 @@ import json
 import zipfile
 import py_compile
 import tempfile
+import base64
 from typing import Tuple, Dict, Any, Optional
+
+AES_FLOW_KEY = base64.b64decode("pO22DRcoQiho/omL8plzGQ==")
+AES_FLOW_IV = b"keosmnvbhdueyr2b"
+
+
+def decrypt_flow_data(raw_data: bytes) -> Tuple[Optional[dict], bool]:
+    """
+    解密影刀 flow.json 流程定义（支持明文与 AES-CBC 密文）
+    """
+    raw_strip = raw_data.strip()
+    if raw_strip.startswith(b"{"):
+        try:
+            return json.loads(raw_strip.decode("utf-8")), False
+        except Exception:
+            return None, False
+    try:
+        from Crypto.Cipher import AES
+        from Crypto.Util.Padding import unpad
+        ciphertext = base64.b64decode(raw_strip)
+        cipher = AES.new(AES_FLOW_KEY, AES.MODE_CBC, AES_FLOW_IV)
+        decrypted = unpad(cipher.decrypt(ciphertext), AES.block_size)
+        return json.loads(decrypted.decode("utf-8")), True
+    except Exception:
+        return None, False
+
+
+def encrypt_flow_data(flow_dict: dict) -> bytes:
+    """
+    加密影刀 flow.json 流程定义
+    """
+    from Crypto.Cipher import AES
+    from Crypto.Util.Padding import pad
+    json_str = json.dumps(flow_dict, ensure_ascii=False, indent=2)
+    raw = json_str.encode("utf-8")
+    cipher = AES.new(AES_FLOW_KEY, AES.MODE_CBC, AES_FLOW_IV)
+    ciphertext = cipher.encrypt(pad(raw, AES.block_size))
+    return base64.b64encode(ciphertext)
+
+
+def repair_flow_block_displays(stage_dir: str, pkg_data: Dict[str, Any]):
+    """
+    遍历 .dev 目录下的所有 *.flow.json 文件，
+    将所有调用子流程 (process.run) 积木块中的 inputs.process.display
+    自动对齐修正为 package.json 中对应的真实流程名（如 'z 终止流程'），
+    解决迁移后调用流程积木块显示底层文件名（如 'process5'）的问题。
+    """
+    dev_dir = os.path.join(stage_dir, ".dev")
+    if not os.path.exists(dev_dir):
+        return
+
+    flows = pkg_data.get("flows", [])
+    if not flows:
+        return
+
+    # 建立 internal_filename -> flow_name 映射
+    flow_map = {}
+    for fl in flows:
+        fn = fl.get("filename")
+        nm = fl.get("name")
+        if fn and nm:
+            flow_map[fn] = nm
+
+    if not flow_map:
+        return
+
+    for fname in os.listdir(dev_dir):
+        if not fname.endswith(".flow.json"):
+            continue
+        fpath = os.path.join(dev_dir, fname)
+        try:
+            raw_data = open(fpath, "rb").read()
+            flow_json, was_encrypted = decrypt_flow_data(raw_data)
+            if not flow_json or "blocks" not in flow_json:
+                continue
+
+            modified = False
+            for block in flow_json.get("blocks", []):
+                if block.get("name") == "process.run":
+                    proc_input = block.get("inputs", {}).get("process", {})
+                    val = proc_input.get("value")
+                    if val:
+                        target_fn = val.split(":", 1)[-1] if ":" in val else val
+                        if target_fn in flow_map:
+                            expected_name = flow_map[target_fn]
+                            if proc_input.get("display") != expected_name:
+                                proc_input["display"] = expected_name
+                                modified = True
+
+            if modified:
+                if was_encrypted:
+                    new_data = encrypt_flow_data(flow_json)
+                else:
+                    new_data = json.dumps(flow_json, ensure_ascii=False, indent=2).encode("utf-8")
+                with open(fpath, "wb") as f:
+                    f.write(new_data)
+        except Exception:
+            pass
 
 
 def calculate_md5(file_path: str) -> str:
@@ -51,11 +149,11 @@ def build_app_package(
     stage_dir = os.path.join(work_temp_dir, "xbot_robot")
 
     try:
-        # 复制所有文件到工作区，忽略 __pycache__、.git 等
+        # 复制所有文件到工作区，忽略 __pycache__、.git 等（注意：保留 .dev 目录，影刀所有流程积木块 *.flow.json 均存储于 .dev 中）
         def ignore_patterns(path, names):
             ignored = set()
             for n in names:
-                if n in [".git", ".dev", ".svn", "__pycache__", ".vscode", ".idea", "venv"]:
+                if n in [".git", ".svn", "__pycache__", ".vscode", ".idea", "venv", "venv310"]:
                     ignored.add(n)
                 elif n.endswith(".pyc") and not encrypt_python:
                     ignored.add(n)
@@ -93,6 +191,9 @@ def build_app_package(
         # 写回 package.json
         with open(pkg_file, "w", encoding="utf-8") as f:
             json.dump(pkg_data, f, ensure_ascii=False, indent=2)
+
+        # 修复 .dev/*.flow.json 中所有调用流程积木块的显示名称
+        repair_flow_block_displays(stage_dir, pkg_data)
 
         # 确定 zip 输出路径
         if not output_dir:

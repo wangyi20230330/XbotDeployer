@@ -13,10 +13,76 @@ def get_default_shadowbot_dir() -> str:
     return os.path.join(local_app_data, "ShadowBot")
 
 
+def get_user_display_name(user_dir: str, users_root: str) -> str:
+    """
+    根据用户目录获取易读的显示名称（优先从 user.db3 与 Account.xml 解析）
+    """
+    user_id = os.path.basename(user_dir)
+    owner_name = None
+
+    # 1. 尝试从 user.db3 获取 ownerName
+    db_path = os.path.join(user_dir, "user.db3")
+    if os.path.exists(db_path):
+        try:
+            import sqlite3
+            conn = sqlite3.connect(db_path)
+            cur = conn.cursor()
+            res = cur.execute(
+                "SELECT ownerName FROM developmentsync_apps_v2 WHERE ownerName IS NOT NULL AND ownerName != '' LIMIT 1"
+            ).fetchone()
+            if res and res[0]:
+                owner_name = res[0]
+            if not owner_name:
+                res2 = cur.execute(
+                    "SELECT ownerName FROM development_apps WHERE ownerName IS NOT NULL AND ownerName != '' LIMIT 1"
+                ).fetchone()
+                if res2 and res2[0]:
+                    owner_name = res2[0]
+            conn.close()
+        except Exception:
+            pass
+
+    # 2. 读取 Account.xml 辅助信息
+    acc_xml = os.path.join(users_root, "Account.xml")
+    acc_info = {}
+    if os.path.exists(acc_xml):
+        try:
+            import xml.etree.ElementTree as ET
+            tree = ET.parse(acc_xml)
+            for acc in tree.getroot().findall("AccountInfo"):
+                name = (acc.findtext("Name") or "").strip()
+                uname = (acc.findtext("UserName") or "").strip()
+                dname = (acc.findtext("UserInfoDisplayName") or "").strip()
+                ent = (acc.findtext("EnterpriseName") or "").strip()
+                for key in [name, uname, dname]:
+                    if key:
+                        acc_info[key] = {
+                            "name": name,
+                            "uname": uname,
+                            "dname": dname,
+                            "ent": ent
+                        }
+        except Exception:
+            pass
+
+    if owner_name:
+        if owner_name in acc_info:
+            info = acc_info[owner_name]
+            best_name = info["dname"] or info["uname"] or info["name"]
+            if info["ent"]:
+                return f"{best_name} ({info['ent']})"
+            elif info["name"] and info["name"] != best_name:
+                return f"{best_name} ({info['name']})"
+            return best_name
+        return owner_name
+
+    return user_id
+
+
 def get_shadowbot_users(shadowbot_dir: Optional[str] = None) -> List[Dict[str, Any]]:
     """
     扫描本地所有 ShadowBot 用户目录
-    :return: List of dict: [{'user_id': '...', 'path': '...', 'app_count': N}, ...]
+    :return: List of dict: [{'user_id': '...', 'user_name': '...', 'path': '...', 'app_count': N}, ...]
     """
     if not shadowbot_dir:
         shadowbot_dir = get_default_shadowbot_dir()
@@ -32,8 +98,10 @@ def get_shadowbot_users(shadowbot_dir: Optional[str] = None) -> List[Dict[str, A
         if os.path.isdir(upath) and item not in ["Assistant", "git-repo"] and item.isdigit():
             apps_dir = os.path.join(upath, "apps")
             scanned_apps = scan_local_apps(user_path=upath, shadowbot_dir=shadowbot_dir)
+            dname = get_user_display_name(upath, users_dir)
             users.append({
                 "user_id": item,
+                "user_name": dname,
                 "path": upath,
                 "apps_path": apps_dir,
                 "app_count": len(scanned_apps)
