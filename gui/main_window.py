@@ -286,7 +286,18 @@ class MainWindow(QMainWindow):
         layout_log = QVBoxLayout(log_group)
         self.txt_log = QTextEdit()
         self.txt_log.setReadOnly(True)
-        self.txt_log.setFont(QFont("Consolas", 9))
+        self.txt_log.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e1e;
+                color: #d4d4d4;
+                border: 1px solid #3c3c3c;
+                border-radius: 4px;
+                padding: 8px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 12px;
+                line-height: 1.4;
+            }
+        """)
         layout_log.addWidget(self.txt_log)
         right_layout.addWidget(log_group, stretch=1)
 
@@ -302,17 +313,25 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("就绪 | Xbot Deployer")
 
     def log(self, message: str, level: str = "INFO"):
-        """向日志窗口追加信息"""
+        """向日志窗口追加信息 (适配深色/浅色模式，保证高对比度清晰易读)"""
         now_str = datetime.now().strftime("%H:%M:%S")
+        if level == "INFO":
+            if message.startswith("❌") or "失败" in message:
+                level = "ERROR"
+            elif message.startswith("✅") or "成功" in message:
+                level = "SUCCESS"
+            elif message.startswith("⚠️") or "警告" in message:
+                level = "WARN"
+
         color_map = {
-            "INFO": "#333333",
-            "SUCCESS": "#2e7d32",
-            "ERROR": "#d32f2f",
-            "WARN": "#ed6c02"
+            "INFO": "#d4d4d4",
+            "SUCCESS": "#52c41a",
+            "ERROR": "#ff4d4f",
+            "WARN": "#faad14"
         }
-        color = color_map.get(level, "#333333")
+        color = color_map.get(level, "#d4d4d4")
         safe_msg = html_escape(message).replace("\n", "<br>")
-        html = f'<span style="color: {color};">[{now_str}] {safe_msg}</span><br>'
+        html = f'<span style="color: {color}; font-family: Consolas, monospace;">[{now_str}] {safe_msg}</span><br>'
         self.txt_log.insertHtml(html)
         self.txt_log.ensureCursorVisible()
 

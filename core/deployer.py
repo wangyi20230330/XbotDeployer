@@ -124,11 +124,13 @@ class ShadowBotDeployer:
         magic_block_count = stats.get("magicBlockCount", 0)
         source_line_count = stats.get("sourceLineCount", 0)
 
+        # 影刀云端开发应用注册接口中，所有开发应用（包含流程与指令集）统一使用 appType: "app" 注册
+        # 实际的指令集类型与 activity_code 完整保存在应用内部的 package.json 与 package.bot 中
         app_package = {
             "activities": [],
             "appFlowParamList": [],
             "appIcon": pkg_data.get("icon") or "",
-            "appType": pkg_data.get("robot_type") or "app",
+            "appType": "app",
             "blockCount": block_count,
             "customItems": pkg_data.get("customItems") or {
                 "gifUrl": "",
@@ -151,7 +153,7 @@ class ShadowBotDeployer:
             "ipaasDependencies": pkg_data.get("ipaasDependencies", []),
             "magicBlockCount": magic_block_count,
             "name": app_name,
-            "packageCode": pkg_data.get("package_code") or "",
+            "packageCode": "",
             "sourceLineCount": source_line_count,
             "statistics": {
                 "blockCount": block_count,
@@ -267,7 +269,9 @@ class ShadowBotDeployer:
             log(f"✅ 打包完成 | 包大小: {os.path.getsize(zip_path)} 字节 | MD5: {pkg_md5}")
 
             # 2. 步骤A: 申请 package.bot 上传 URL
-            log("🌐 正在向影刀云端申请应用包 (package.bot) 云存储资源...")
+            target_app_type = pkg_data.get("robot_type") or "app"
+            type_desc = "指令集" if target_app_type == "activity" else "应用包"
+            log(f"🌐 正在向影刀云端申请{type_desc} (package.bot) 云存储资源...")
             ok, msg, res_data_bot = self.assign_upload_url(
                 target_token=target_token,
                 app_id=fresh_uuid,
@@ -281,18 +285,18 @@ class ShadowBotDeployer:
 
             upload_bot_url = res_data_bot.get("uploadUrl")
             if not upload_bot_url:
-                err = "❌ 云存储返回信息缺少 uploadUrl (package.bot)"
+                err = f"❌ 云存储返回信息缺少 uploadUrl (package.bot)"
                 log(err)
                 return False, err
 
             # 3. 步骤A: 上传 package.bot
-            ok, msg = self.upload_file_to_cloud(upload_bot_url, zip_path, description="应用包 (package.bot)", progress_callback=log)
+            ok, msg = self.upload_file_to_cloud(upload_bot_url, zip_path, description=f"{type_desc} (package.bot)", progress_callback=log)
             if not ok:
                 log(f"❌ {msg}")
                 return False, msg
 
             # 4. 步骤B: 申请 package.json 上传 URL
-            log("🌐 正在向影刀云端申请应用结构 (package.json) 云存储资源...")
+            log(f"🌐 正在向影刀云端申请{type_desc}结构 (package.json) 云存储资源...")
             ok, msg, res_data_json = self.assign_upload_url(
                 target_token=target_token,
                 app_id=fresh_uuid,

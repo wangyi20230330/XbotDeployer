@@ -9,6 +9,7 @@ import zipfile
 import py_compile
 import tempfile
 import base64
+import uuid
 from typing import Tuple, Dict, Any, Optional
 
 AES_FLOW_KEY = base64.b64decode("pO22DRcoQiho/omL8plzGQ==")
@@ -175,6 +176,11 @@ def build_app_package(
             pkg_data["uuid"] = new_uuid
 
         pkg_data["version"] = "1"
+
+        if pkg_data.get("robot_type") == "activity":
+            if not pkg_data.get("activity_code"):
+                pkg_data["activity_code"] = f"activity_{uuid.uuid4().hex[:8]}"
+            pkg_data["package_code"] = pkg_data["activity_code"]
 
         if encrypt_python:
             pkg_data["encrypt_bot"] = True
