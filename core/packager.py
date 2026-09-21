@@ -12,6 +12,30 @@ import base64
 import uuid
 from typing import Tuple, Dict, Any, Optional
 
+# === 补丁：让元素库随包走 =====================================================
+# 原版 build_app_package 只复制 xbot_robot/，兄弟目录 xbot_selectors/ 从不参与，
+# 于是收件方拿到的应用没有元素实体（元素短板）。下面三个开关可用环境变量覆盖：
+#   XBOT_INCLUDE_ELEMENTS=0|1       是否把 xbot_selectors/ 打进 package.bot（默认 1）
+#   XBOT_ELEMENTS_LAYOUT=root|wrap  打包布局：root=与流程文件同级（默认）；wrap=包根放 xbot_robot/
+#   XBOT_ELEMENT_STATUS=0|1         注册时 elementLibraryStatus 取值（默认 1，含义未验证）
+INCLUDE_ELEMENTS = os.environ.get("XBOT_INCLUDE_ELEMENTS", "1") != "0"
+ELEMENTS_LAYOUT = os.environ.get("XBOT_ELEMENTS_LAYOUT", "root").lower()
+ELEMENT_STATUS = int(os.environ.get("XBOT_ELEMENT_STATUS", "1") or 0)
+
+
+def _collect_element_codes(selectors_dir, pkg_data):
+    """元素组 code 集合 = 磁盘上的 element_* 目录 ∪ package.json 的 selectordependencies。"""
+    codes = set()
+    if selectors_dir and os.path.isdir(selectors_dir):
+        for name in os.listdir(selectors_dir):
+            if name.startswith("element_"):
+                codes.add(name)
+    for item in (pkg_data.get("selectordependencies") or []):
+        if isinstance(item, str) and item.startswith("element_"):
+            codes.add(item)
+    return sorted(codes)
+
+
 AES_FLOW_KEY = base64.b64decode("pO22DRcoQiho/omL8plzGQ==")
 AES_FLOW_IV = b"keosmnvbhdueyr2b"
 
@@ -198,6 +222,23 @@ def build_app_package(
         with open(pkg_file, "w", encoding="utf-8") as f:
             json.dump(pkg_data, f, ensure_ascii=False, indent=2)
 
+        # === 补丁：把元素库（xbot_selectors/）也纳入本次打包 ===
+        selectors_dir = None
+        if INCLUDE_ELEMENTS:
+            selectors_dir = os.path.join(os.path.dirname(os.path.abspath(robot_dir)), "xbot_selectors")
+            if not os.path.isdir(selectors_dir):
+                # 兼容：robot_dir 本身就是应用根目录（少数调用方）
+                cand = os.path.join(os.path.abspath(robot_dir), "xbot_selectors")
+                selectors_dir = cand if os.path.isdir(cand) else None
+            element_codes = _collect_element_codes(selectors_dir, pkg_data)
+            if element_codes:
+                pkg_data["selectordependencies"] = element_codes
+                with open(pkg_file, "w", encoding="utf-8") as f:
+                    json.dump(pkg_data, f, ensure_ascii=False, indent=2)
+                print("[elements] 元素组 %d 个：%s" % (len(element_codes), ", ".join(element_codes)))
+            else:
+                print("[elements] 未发现元素库（跳过）")
+
         # 修复 .dev/*.flow.json 中所有调用流程积木块的显示名称
         repair_flow_block_displays(stage_dir, pkg_data)
 
@@ -222,7 +263,19 @@ def build_app_package(
                 for f in files:
                     full_fp = os.path.join(root, f)
                     rel_fp = os.path.relpath(full_fp, stage_dir)
+                    if ELEMENTS_LAYOUT == "wrap":
+                        rel_fp = os.path.join("xbot_robot", rel_fp)
                     zf.write(full_fp, arcname=rel_fp)
+            # === 补丁：元素库放进同一个 package.bot ===
+            if selectors_dir:
+                n = 0
+                for root, dirs, files in os.walk(selectors_dir):
+                    for f in files:
+                        full_fp = os.path.join(root, f)
+                        inner = os.path.relpath(full_fp, selectors_dir)
+                        zf.write(full_fp, arcname=os.path.join("xbot_selectors", inner))
+                        n += 1
+                print("[elements] 已写入 xbot_selectors/：%d 个文件（layout=%s）" % (n, ELEMENTS_LAYOUT))
 
         # 计算 MD5
         pkg_md5 = calculate_md5(zip_path)

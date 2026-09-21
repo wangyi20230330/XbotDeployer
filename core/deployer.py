@@ -11,6 +11,10 @@ from typing import Tuple, Dict, Any, Optional, Callable
 from .packager import build_app_package
 
 
+# === 补丁：注册时的 elementLibraryStatus（0=无元素库/原版写死值；1=有元素库，含义未验证）===
+_ELEMENT_STATUS = int(os.environ.get("XBOT_ELEMENT_STATUS", "1") or 0)
+
+
 class ShadowBotDeployer:
     """影刀云端部署交互客户端"""
 
@@ -131,6 +135,8 @@ class ShadowBotDeployer:
             "appFlowParamList": [],
             "appIcon": pkg_data.get("icon") or "",
             "appType": "app",
+            # === 补丁：原版写死 elementLibraryStatus=0（= 没有元素库）；这里按环境变量取 1 ===
+            "elementLibraryStatus": _ELEMENT_STATUS,
             "blockCount": block_count,
             "customItems": pkg_data.get("customItems") or {
                 "gifUrl": "",
@@ -140,7 +146,8 @@ class ShadowBotDeployer:
                 "videoUrl": ""
             },
             "description": pkg_data.get("description") or "",
-            "elementLibraryCodes": [],
+            # === 补丁：把应用的元素库 code 一起登记，否则云端认为该应用"没有元素库" ===
+            "elementLibraryCodes": sorted(set(pkg_data.get("selectordependencies") or [])),
             "enableViewSource": "false",
             "externalDependencies": pkg_data.get("external_dependencies", []),
             "flowCount": flow_count,
@@ -169,7 +176,7 @@ class ShadowBotDeployer:
         payload = {
             "appId": app_id,
             "appPackage": app_package,
-            "elementLibraryStatus": 0,
+            "elementLibraryStatus": _ELEMENT_STATUS,
             "groupId": "",
             "packageMd5": package_md5
         }

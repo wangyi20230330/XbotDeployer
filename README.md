@@ -2,6 +2,23 @@
 
 Xbot Deployer 是一款用于在不同账号间打包、迁移和部署影刀（ShadowBot）本地应用的开源工具。本项目同时提供图形化界面（GUI）与命令行界面（CLI），能够无缝备份本地应用并将其直接推送至目标接收账号的云端空间中。
 
+## 本 fork 的改动：元素库随包迁移（已实测 ✅）
+
+> 上游版本迁移后**元素库会丢失**（收件方 `xbot_selectors/` 为空，元素全部失效）。
+> 本 fork 修复了这个问题：元素库会随 `package.bot` 一起上传，注册时带上 `elementLibraryCodes`。
+
+```bash
+# 用法与上游完全一致，元素库默认带上
+python main.py deploy --app <本地应用> ...
+# 如需完全恢复上游行为（不带元素库）：
+#   set XBOT_INCLUDE_ELEMENTS=0
+```
+
+实测（影刀 6.3.22，2026-09-21）：源应用 10 组元素 / 222 个元素文件 → 收件方**同样 10 组 / 222 个文件**，
+客户端自动下载、`check-sigstore` 通过、**直接打开可用**，扩展与 Python 依赖也会自动下发。
+
+细节与证据：[docs/ELEMENTS-FIX.md](docs/ELEMENTS-FIX.md)｜fork 说明：[FORK-NOTES.md](FORK-NOTES.md)
+
 ## 功能特性
 
 - 扫描与列出本地应用：自动检测影刀的用户数据路径，并列出所有本地应用及其元数据（UUID、大小、修改时间）。
